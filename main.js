@@ -32,6 +32,14 @@
     );
   }
 
+  function readDiagnostic(read) {
+    try {
+      return read() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   function copyMarkdown(markdown, attempt) {
     const previousFocus = document.activeElement;
     let textarea = null;
@@ -39,10 +47,19 @@
     let copyState;
 
     const readCopyState = () => ({
-      userActivation: navigator.userActivation?.isActive ?? null,
-      documentHasFocus: document.hasFocus(),
-      textareaHasFocus: textarea !== null && document.activeElement === textarea,
-      hasSelection: textarea !== null && textarea.selectionEnd > textarea.selectionStart
+      userActivation: readDiagnostic(() => navigator.userActivation?.isActive),
+      documentHasFocus: readDiagnostic(() => document.hasFocus()),
+      textareaHasFocus: readDiagnostic(() => {
+        if (textarea === null) return false;
+        const activeElement = document.activeElement;
+        return activeElement === undefined ? null : activeElement === textarea;
+      }),
+      hasSelection: readDiagnostic(() => {
+        if (textarea === null) return false;
+        const { selectionStart, selectionEnd } = textarea;
+        if (selectionStart == null || selectionEnd == null) return null;
+        return selectionEnd > selectionStart;
+      })
     });
 
     try {
@@ -74,7 +91,7 @@
         attempt,
         reason: 'exception',
         stage,
-        errorName: error?.name ?? null,
+        errorName: readDiagnostic(() => error?.name),
         ...(copyState ?? readCopyState())
       });
       return false;
