@@ -32,22 +32,54 @@
     );
   }
 
-  function copyMarkdown(markdown) {
+  function copyMarkdown(markdown, attempt) {
     const previousFocus = document.activeElement;
-    const textarea = document.createElement('textarea');
+    let textarea = null;
+    let stage = 'prepare-textarea';
+    let copyState;
+
+    const readCopyState = () => ({
+      userActivation: navigator.userActivation?.isActive ?? null,
+      documentHasFocus: document.hasFocus(),
+      textareaHasFocus: textarea !== null && document.activeElement === textarea,
+      hasSelection: textarea !== null && textarea.selectionEnd > textarea.selectionStart
+    });
 
     try {
+      textarea = document.createElement('textarea');
       textarea.value = markdown;
       textarea.readOnly = true;
       textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
       document.body.appendChild(textarea);
+
+      stage = 'focus-textarea';
       textarea.focus({ preventScroll: true });
+
+      stage = 'select-text';
       textarea.select();
-      return document.execCommand('copy');
-    } catch {
+
+      stage = 'exec-command';
+      copyState = readCopyState();
+      const copied = document.execCommand('copy');
+      if (!copied) {
+        warn('Clipboard copy failed', {
+          attempt,
+          reason: 'exec-command-returned-false',
+          ...copyState
+        });
+      }
+      return copied;
+    } catch (error) {
+      warn('Clipboard copy failed', {
+        attempt,
+        reason: 'exception',
+        stage,
+        errorName: error?.name ?? null,
+        ...(copyState ?? readCopyState())
+      });
       return false;
     } finally {
-      textarea.remove();
+      textarea?.remove();
       previousFocus?.focus?.({ preventScroll: true });
     }
   }
@@ -388,10 +420,10 @@
     // Blob.size measures the UTF-8 bytes of the exported text.
     if (blob.size > 512 * 1024) {
       download();
-    } else if (!copyMarkdown(markdown)) {
+    } else if (!copyMarkdown(markdown, 'initial')) {
       showCopyRetry(() => {
         try {
-          if (!copyMarkdown(markdown)) download();
+          if (!copyMarkdown(markdown, 'retry')) download();
         } catch (error) {
           reportError(error);
         }
