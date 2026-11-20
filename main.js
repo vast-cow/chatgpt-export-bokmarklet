@@ -23,6 +23,65 @@
   const warn = (...args) => console.warn(PREFIX, ...args);
   const fail = message => { throw new Error(message); };
 
+  function reportError(error) {
+    console.error(PREFIX, 'エラー:', error.message);
+
+    alert(
+      `${error.message}\n\n` +
+      `Console の ${PREFIX} を確認してください。`
+    );
+  }
+
+  function copyMarkdown(markdown) {
+    const previousFocus = document.activeElement;
+    const textarea = document.createElement('textarea');
+
+    try {
+      textarea.value = markdown;
+      textarea.readOnly = true;
+      textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+      document.body.appendChild(textarea);
+      textarea.focus({ preventScroll: true });
+      textarea.select();
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      textarea.remove();
+      previousFocus?.focus?.({ preventScroll: true });
+    }
+  }
+
+  function showCopyRetry(onRetry) {
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('aria-label', 'Markdown copy failed');
+    dialog.style.cssText =
+      'margin:auto;padding:1rem;border:1px solid CanvasText;background:Canvas;color:CanvasText';
+
+    const message = document.createElement('p');
+    message.textContent = 'If the retry fails, the Markdown will download as a file.';
+    message.style.marginBottom = '0.75rem';
+
+    const retry = document.createElement('button');
+    retry.textContent = 'Retry Copy';
+    retry.style.cssText = 'all:revert;margin-inline-end:0.5rem';
+    retry.addEventListener('click', () => {
+      if (!dialog.open) return;
+      dialog.close();
+      onRetry();
+    });
+
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    cancel.style.cssText = 'all:revert';
+    cancel.addEventListener('click', () => dialog.close());
+
+    dialog.append(message, retry, cancel);
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    document.body.appendChild(dialog);
+    dialog.showModal();
+  }
+
   function extractMessage(message) {
     const c = message.content || {};
 
@@ -297,41 +356,50 @@
       ])
     ].join('\n').trimEnd() + '\n';
 
-    // ダウンロード
-    const filename = (
-      title
-        .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
-        .slice(0, 100) || 'chatgpt'
-    ) + '.md';
-
     const blob = new Blob(
       [markdown],
       { type: 'text/markdown;charset=utf-8' }
     );
 
-    const downloadUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const download = () => {
+      const filename = (
+        title
+          .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+          .slice(0, 100) || 'chatgpt'
+      ) + '.md';
+      const link = document.createElement('a');
+      const downloadUrl = URL.createObjectURL(blob);
 
-    link.href = downloadUrl;
-    link.download = filename;
+      try {
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+      } finally {
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
+      }
 
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+      log('ダウンロード開始', {
+        messages: turns.length,
+        bytes: blob.size
+      });
+    };
 
-    setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
+    // Blob.size measures the UTF-8 bytes of the exported text.
+    if (blob.size > 512 * 1024) {
+      download();
+    } else if (!copyMarkdown(markdown)) {
+      showCopyRetry(() => {
+        try {
+          if (!copyMarkdown(markdown)) download();
+        } catch (error) {
+          reportError(error);
+        }
+      });
+    }
 
-    log('ダウンロード開始', {
-      messages: turns.length,
-      bytes: blob.size
-    });
-
-  } catch (e) {
-    console.error(PREFIX, 'エラー:', e.message);
-
-    alert(
-      `${e.message}\n\n` +
-      `Console の ${PREFIX} を確認してください。`
-    );
+  } catch (error) {
+    reportError(error);
   }
 })();
