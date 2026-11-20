@@ -24,11 +24,11 @@
   const fail = message => { throw new Error(message); };
 
   function reportError(error) {
-    console.error(PREFIX, 'エラー:', error.message);
+    console.error(PREFIX, 'Error:', error.message);
 
     alert(
       `${error.message}\n\n` +
-      `Console の ${PREFIX} を確認してください。`
+      `Check the console for ${PREFIX}.`
     );
   }
 
@@ -105,12 +105,12 @@
       if (typeof part.text === 'string') return part.text;
 
       if (part.content_type === 'image_asset_pointer') {
-        return '*[画像：エクスポート未対応]*';
+        return '*[Image: export not supported]*';
       }
 
       if (/file|canvas|artifact/.test(part.content_type || '')) {
-        return `*[添付ファイル：${
-          part.name || part.filename || 'ファイル'
+        return `*[Attachment: ${
+          part.name || part.filename || 'file'
         }]*`;
       }
 
@@ -131,7 +131,7 @@
 
   try {
     if (!['chatgpt.com', 'chat.openai.com'].includes(location.hostname)) {
-      fail('ChatGPT のページで実行してください。');
+      fail('Run this on a ChatGPT page.');
     }
 
     const match = location.pathname.match(
@@ -144,7 +144,7 @@
 
     const type = match ? 'conversation' : share ? 'share' : null;
 
-    log('ページ診断', {
+    log('Page diagnostics', {
       type: type || 'unknown',
       mainCount: document.querySelectorAll('main').length,
       articleCount: document.querySelectorAll('article').length,
@@ -156,12 +156,12 @@
 
     if (!type) {
       fail(
-        '会話IDをURLから取得できませんでした。' +
-        '保存済みの会話（/c/...）を開いてください。'
+        'Could not get a conversation ID from the URL. ' +
+        'Open a saved conversation (/c/...).'
       );
     }
 
-    // セッション情報取得
+    // Get session information.
     let session = null;
 
     try {
@@ -176,10 +176,10 @@
         session = await response.json();
       }
     } catch (e) {
-      warn('session APIの取得に失敗', { name: e.name });
+      warn('Failed to fetch session API', { name: e.name });
     }
 
-    // 認証情報はログに出力しない
+    // Do not log authentication credentials.
     const token = session?.accessToken;
     const accountId =
       session?.account?.id ||
@@ -212,7 +212,7 @@
       headers: {}
     });
 
-    // 会話API
+    // Conversation API.
     const id = match ? match[1] : share[1];
 
     const endpoint = type === 'share'
@@ -246,36 +246,36 @@
 
       if (response.status === 429) {
         fail(
-          'HTTP 429：アクセス制限中のため再試行を停止しました。'
+          'HTTP 429: Access is rate-limited. Stopping retries.'
         );
       }
     }
 
     if (!responseData) {
       fail(
-        `会話APIにアクセスできません（最終HTTP ${lastStatus}）。`
+        `Could not access the conversation API (final HTTP ${lastStatus}).`
       );
     }
 
-    // 会話ツリー解析
+    // Parse the conversation tree.
     const conv = responseData.conversation || responseData;
     const mapping = conv.mapping;
 
     if (!mapping || typeof mapping !== 'object') {
-      log('レスポンス構造', {
+      log('Response structure', {
         keys: Object.keys(conv).slice(0, 20)
       });
 
-      fail('APIの応答に mapping がありません。');
+      fail('The API response does not contain a mapping.');
     }
 
-    log('会話データ', {
+    log('Conversation data', {
       mappingCount: Object.keys(mapping).length,
       hasCurrentNode: Boolean(conv.current_node),
       titleCharacters: (conv.title || '').length
     });
 
-    // 現在の分岐を辿る
+    // Follow the current branch.
     const chain = [];
     const visited = new Set();
 
@@ -297,7 +297,7 @@
 
     chain.reverse();
 
-    // メッセージ抽出
+    // Extract messages.
     const turns = chain.flatMap(message => {
       const role = message.author?.role;
 
@@ -325,7 +325,7 @@
       return body ? [{ role, body }] : [];
     });
 
-    log('抽出結果', {
+    log('Extraction results', {
       chainMessages: chain.length,
       exportedMessages: turns.length,
       users: turns.filter(t => t.role === 'user').length,
@@ -334,12 +334,11 @@
 
     if (!turns.length) {
       fail(
-        'APIからメッセージを取得できましたが、' +
-        '本文を抽出できませんでした。'
+        'Messages were retrieved from the API, but their text could not be extracted.'
       );
     }
 
-    // Markdown生成
+    // Generate Markdown.
     const title = conv.title || 'ChatGPT conversation';
     const source = `${location.origin}${location.pathname}`;
 
@@ -380,7 +379,7 @@
         setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
       }
 
-      log('ダウンロード開始', {
+      log('Download started', {
         messages: turns.length,
         bytes: blob.size
       });
