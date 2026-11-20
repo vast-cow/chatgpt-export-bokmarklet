@@ -85,7 +85,7 @@
           ...copyState
         });
       }
-      return copied;
+      return { copied, documentHasFocus: copyState.documentHasFocus };
     } catch (error) {
       warn('Clipboard copy failed', {
         attempt,
@@ -94,21 +94,25 @@
         errorName: readDiagnostic(() => error?.name),
         ...(copyState ?? readCopyState())
       });
-      return false;
+      return { copied: false };
     } finally {
       textarea?.remove();
       previousFocus?.focus?.({ preventScroll: true });
     }
   }
 
-  function showCopyRetry(onRetry) {
+  function showCopyRetry(documentHasFocus, onRetry) {
     const dialog = document.createElement('dialog');
     dialog.setAttribute('aria-label', 'Markdown copy failed');
     dialog.style.cssText =
       'margin:auto;padding:1rem;border:1px solid CanvasText;background:Canvas;color:CanvasText';
 
     const message = document.createElement('p');
-    message.textContent = 'If the retry fails, the Markdown will download as a file.';
+    const focusHint = documentHasFocus === false
+      ? 'The page did not have focus during the first copy attempt. ' +
+        'This can happen when the DevTools Console has focus. '
+      : '';
+    message.textContent = focusHint + 'If the retry fails, the Markdown will download as a file.';
     message.style.marginBottom = '0.75rem';
 
     const retry = document.createElement('button');
@@ -437,10 +441,14 @@
     // Blob.size measures the UTF-8 bytes of the exported text.
     if (blob.size > 512 * 1024) {
       download();
-    } else if (!copyMarkdown(markdown, 'initial')) {
-      showCopyRetry(() => {
+      return;
+    }
+
+    const { copied, documentHasFocus } = copyMarkdown(markdown, 'initial');
+    if (!copied) {
+      showCopyRetry(documentHasFocus, () => {
         try {
-          if (!copyMarkdown(markdown, 'retry')) download();
+          if (!copyMarkdown(markdown, 'retry').copied) download();
         } catch (error) {
           reportError(error);
         }
